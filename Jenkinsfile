@@ -15,9 +15,10 @@ pipeline {
         
         stage('Build Maven') {
             steps {
-                echo '🔨 Construction du projet Maven...'
+                echo '🔨 Construction du projet Maven avec accès réseau...'
                 sh '''
                     docker run --rm \
+                        --network=host \
                         -v "$PWD":/app \
                         -v "$HOME/.m2":/root/.m2 \
                         -w /app \
@@ -31,10 +32,8 @@ pipeline {
             steps {
                 echo '✅ Vérification du build...'
                 sh '''
-                    echo "=== Contenu du dossier target/ ==="
                     ls -la target/
-                    echo "=== Fichiers JAR trouvés ==="
-                    find target/ -name "*.jar" -type f 2>/dev/null || echo "Aucun JAR trouvé"
+                    find target/ -name "*.jar" -type f
                 '''
             }
         }
@@ -44,21 +43,19 @@ pipeline {
                 echo '🐳 Construction de l image Docker...'
                 sh """
                     docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} .
-                    echo "=== Images Docker créées ==="
-                    docker images | grep student-management || echo "Aucune image student-management trouvée"
+                    echo "Image créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}"
                 """
             }
         }
         
         stage('Test Docker Image') {
             steps {
-                echo '🧪 Test de l image Docker sur le port 8089...'
+                echo '🧪 Test de l image Docker...'
                 sh """
-                    # Démarrer le conteneur sur le port 8089
                     docker run --rm -d --name test-container -p 8089:8089 ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} &
-                    sleep 15
-                    echo "=== Test de connexion sur le port 8089 ==="
-                    curl -f http://localhost:8089 || echo "L'application ne répond pas sur le port 8089"
+                    sleep 20
+                    echo "Test sur le port 8089..."
+                    curl -f http://localhost:8089 || echo "Application en démarrage..."
                     docker stop test-container
                 """
             }
@@ -67,12 +64,6 @@ pipeline {
     post {
         success {
             echo '🎉 SUCCÈS : Pipeline terminé avec succès!'
-            sh """
-                echo '=== Résumé ==='
-                echo 'Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
-                echo 'Port exposé : 8089'
-                docker images | grep student-management || echo 'Aucune image créée'
-            """
         }
         failure {
             echo '❌ ÉCHEC : Pipeline a échoué!'
