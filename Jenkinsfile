@@ -11,7 +11,7 @@ pipeline {
         stage('Checkout Git') {
             steps {
                 echo '📥 Téléchargement du code depuis Git...'
-                git branch: 'main', 
+                git branch: 'master', 
                 url: 'https://github.com/Ranimaj/Project_Devops.git'
             }
         }
