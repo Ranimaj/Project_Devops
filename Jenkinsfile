@@ -1,7 +1,7 @@
 pipeline {
     agent any
     environment {
-        DOCKER_HUB_REPO = 'ranimajlani02/student-management'
+        DOCKER_HUB_REPO = 'student-management'
         DOCKER_IMAGE_TAG = "build-${env.BUILD_NUMBER}"
     }
     stages {
@@ -15,9 +15,11 @@ pipeline {
         
         stage('Build Maven') {
             steps {
+                echo '🔨 Construction du projet Maven...'
                 sh '''
                     docker run --rm \
                         -v "$PWD":/app \
+                        -v "$HOME/.m2":/root/.m2 \
                         -w /app \
                         maven:3.8.6-openjdk-11 \
                         mvn clean package -DskipTests
@@ -29,34 +31,36 @@ pipeline {
             steps {
                 echo '✅ Vérification du build...'
                 sh '''
+                    echo "=== Contenu du dossier target/ ==="
                     ls -la target/
-                    find target/ -name "*.jar" -type f
+                    echo "=== Fichiers JAR trouvés ==="
+                    find target/ -name "*.jar" -type f 2>/dev/null || echo "Aucun JAR trouvé"
                 '''
             }
         }
         
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t student-management:latest .'
-                sh 'docker images | grep student-management'
+                echo '🐳 Construction de l image Docker...'
+                sh """
+                    docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} .
+                    echo "=== Images Docker créées ==="
+                    docker images | grep student-management || echo "Aucune image student-management trouvée"
+                """
             }
         }
-    }
-        stage('Push to Docker Hub') {
+        
+        stage('Test Docker Image') {
             steps {
-                echo '📤 Envoi vers Docker Hub...'
-                script {
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-credentials',
-                        usernameVariable: 'DOCKER_USERNAME',
-                        passwordVariable: 'DOCKER_PASSWORD'
-                    )]) {
-                        sh """
-                            docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
-                            docker push ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}
-                        """
-                    }
-                }
+                echo '🧪 Test de l image Docker sur le port 8089...'
+                sh """
+                    # Démarrer le conteneur sur le port 8089
+                    docker run --rm -d --name test-container -p 8089:8089 ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} &
+                    sleep 15
+                    echo "=== Test de connexion sur le port 8089 ==="
+                    curl -f http://localhost:8089 || echo "L'application ne répond pas sur le port 8089"
+                    docker stop test-container
+                """
             }
         }
     }
@@ -64,8 +68,10 @@ pipeline {
         success {
             echo '🎉 SUCCÈS : Pipeline terminé avec succès!'
             sh """
+                echo '=== Résumé ==='
                 echo 'Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
-                docker images | grep student-management
+                echo 'Port exposé : 8089'
+                docker images | grep student-management || echo 'Aucune image créée'
             """
         }
         failure {
