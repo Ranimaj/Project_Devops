@@ -17,21 +17,19 @@ pipeline {
         }
         
         stage('Build Maven') {
-            steps {
-                echo '🔨 Construction du projet Maven...'
-                sh '''
-                    # Essayer d'abord avec le mirror Alibaba
-                    mvn clean package -DskipTests \
-                    -Dmaven.repo.remote=https://maven.aliyun.com/repository/public || \
-                    
-                    # Si échec, essayer avec ignore SSL complet
-                    mvn clean package -DskipTests \
-                    -Dmaven.wagon.http.ssl.insecure=true \
-                    -Dmaven.wagon.http.ssl.allowall=true \
-                    -Dmaven.wagon.httpprovider=apache
-                '''
-            }
-        }
+    steps {
+        echo '🔨 Construction du projet Maven avec Docker...'
+        sh '''
+            # Utiliser un conteneur Docker Maven pour bypass les problèmes réseau
+            docker run --rm \
+                -v "$PWD":/app \
+                -v "$HOME/.m2":/root/.m2 \
+                -w /app \
+                maven:3.8.6-openjdk-17 \
+                mvn clean package -DskipTests
+        '''
+    }
+}
         
         stage('Build Docker Image') {
             steps {
