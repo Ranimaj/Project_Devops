@@ -11,17 +11,22 @@ pipeline {
         stage('Checkout Git') {
             steps {
                 echo '📥 Téléchargement du code depuis Git...'
-                git branch: 'main', 
+                git branch: 'master', 
                 url: 'https://github.com/Ranimaj/Project_Devops.git'
             }
         }
         
         stage('Build Maven') {
-            steps {
-                echo '🔨 Construction du projet Maven...'
-                sh 'mvn clean package -DskipTests'
-            }
-        }
+    steps {
+        echo '🔨 Construction du projet Maven...'
+        sh '''
+            mvn clean package -DskipTests \
+            -Dmaven.wagon.http.ssl.insecure=true \
+            -Dmaven.wagon.http.ssl.allowall=true \
+            -Dmaven.wagon.http.ssl.ignore.validity.dates=true
+        '''
+    }
+}
         
         stage('Build Docker Image') {
             steps {
