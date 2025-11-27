@@ -1,8 +1,5 @@
 pipeline {
     agent any
-    tools {
-        maven 'M2_HOME'
-    }
     environment {
         DOCKER_HUB_REPO = 'ranimajlani02/student-management'
         DOCKER_IMAGE_TAG = "build-${env.BUILD_NUMBER}"
@@ -17,25 +14,34 @@ pipeline {
         }
         
         stage('Build Maven') {
-    steps {
-        echo '🔨 Construction du projet Maven avec Docker...'
-        sh '''
-            # Utiliser un conteneur Docker Maven pour bypass les problèmes réseau
-            docker run --rm \
-                -v "$PWD":/app \
-                -v "$HOME/.m2":/root/.m2 \
-                -w /app \
-                maven:3.8.6-openjdk-17 \
-                mvn clean package -DskipTests
-        '''
-    }
-}
+            steps {
+                echo '🔨 Construction du projet Maven...'
+                sh '''
+                    docker run --rm \
+                        -v "$PWD":/app \
+                        -v "$HOME/.m2":/root/.m2 \
+                        -w /app \
+                        maven:3.8.6-openjdk-11 \
+                        mvn clean package -DskipTests
+                '''
+            }
+        }
+        
+        stage('Verify Build') {
+            steps {
+                echo '✅ Vérification du build...'
+                sh '''
+                    ls -la target/
+                    find target/ -name "*.jar" -type f
+                '''
+            }
+        }
         
         stage('Build Docker Image') {
             steps {
                 echo '🐳 Construction de l image Docker...'
                 script {
-                    dockerImage = docker.build("${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}")
+                    sh "docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} ."
                 }
             }
         }
@@ -44,9 +50,15 @@ pipeline {
             steps {
                 echo '📤 Envoi vers Docker Hub...'
                 script {
-                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
-                        dockerImage.push()
-                        dockerImage.push('latest')
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )]) {
+                        sh """
+                            docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD
+                            docker push ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}
+                        """
                     }
                 }
             }
@@ -55,6 +67,10 @@ pipeline {
     post {
         success {
             echo '🎉 SUCCÈS : Pipeline terminé avec succès!'
+            sh """
+                echo 'Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
+                docker images | grep student-management
+            """
         }
         failure {
             echo '❌ ÉCHEC : Pipeline a échoué!'
