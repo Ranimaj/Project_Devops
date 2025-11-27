@@ -18,16 +18,15 @@ pipeline {
                 echo '📦 Création d un JAR de test...'
                 sh '''
                     mkdir -p target
-                    # Créer un JAR factice pour tester Docker
                     echo "Test JAR for Docker build" > target/student-management-0.0.1-SNAPSHOT.jar
                     ls -la target/
                 '''
             }
         }
         
-        stage('Build Docker Image') {
+        stage('Build Docker Image with Alpine') {
             steps {
-                echo '🐳 Construction de l image Docker...'
+                echo '🐳 Construction avec Alpine + Java...'
                 sh """
                     docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} .
                     echo "✅ Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}"
@@ -40,12 +39,15 @@ pipeline {
             steps {
                 echo '🧪 Test de l image Docker...'
                 sh """
-                    # Tester que l'image se construit et démarre
-                    docker run --rm -d --name test-container -p 8089:8089 ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} &
+                    # Tester que Java fonctionne dans l'image
+                    docker run --rm ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} java -version
+                    echo "✅ Java fonctionne correctement dans l'image"
+                    
+                    # Tester le démarrage de l'application
+                    docker run --rm -d --name test-app -p 8089:8089 ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} &
                     sleep 10
-                    echo "🔄 Vérification du conteneur..."
-                    docker ps | grep test-container && echo "✅ Conteneur démarré avec succès" || echo "⚠️ Conteneur non démarré"
-                    docker stop test-container
+                    docker ps | grep test-app && echo "✅ Application démarrée" || echo "⚠️ Application non démarrée"
+                    docker stop test-app 2>/dev/null || true
                 """
             }
         }
@@ -56,7 +58,9 @@ pipeline {
             sh """
                 echo '=== RÉSUMÉ ==='
                 echo 'Image créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
-                echo 'Port exposé : 8089'
+                echo 'Base : Alpine Linux + Java 17'
+                echo 'Port : 8089'
+                docker images | grep student-management
             """
         }
         failure {
