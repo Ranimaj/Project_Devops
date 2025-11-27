@@ -15,11 +15,9 @@ pipeline {
         
         stage('Build Maven') {
             steps {
-                echo '🔨 Construction du projet Maven...'
                 sh '''
                     docker run --rm \
                         -v "$PWD":/app \
-                        -v "$HOME/.m2":/root/.m2 \
                         -w /app \
                         maven:3.8.6-openjdk-11 \
                         mvn clean package -DskipTests
@@ -39,13 +37,11 @@ pipeline {
         
         stage('Build Docker Image') {
             steps {
-                echo '🐳 Construction de l image Docker...'
-                script {
-                    sh "docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} ."
-                }
+                sh 'docker build -t student-management:latest .'
+                sh 'docker images | grep student-management'
             }
         }
-        
+    }
         stage('Push to Docker Hub') {
             steps {
                 echo '📤 Envoi vers Docker Hub...'
