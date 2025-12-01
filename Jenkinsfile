@@ -5,49 +5,58 @@ pipeline {
         DOCKER_IMAGE_TAG = "build-${env.BUILD_NUMBER}"
         DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
     }
-    stages {
-        stage('Checkout Git') {
-            steps {
-                echo '📥 Téléchargement du code depuis Git...'
-                git branch: 'master', 
-                url: 'https://github.com/Ranimaj/Project_Devops.git'
-                
-                // Vérifier que les fichiers nécessaires existent
-                sh '''
-                    echo "📁 Structure du projet:"
-                    ls -la
-                    echo ""
-                    echo "🔍 Vérification des fichiers Docker:"
-                    if [ -f Dockerfile ]; then
-                        echo "✅ Dockerfile présent"
-                        head -5 Dockerfile
-                    else
-                        echo "❌ Dockerfile manquant - création..."
-                        # Vous pouvez créer le Dockerfile ici si nécessaire
-                    fi
-                    
-                    if [ -f entrypoint.sh ]; then
-                        echo "✅ entrypoint.sh présent"
-                        chmod +x entrypoint.sh
-                        head -5 entrypoint.sh
-                    else
-                        echo "❌ entrypoint.sh manquant - création..."
-                        # Créer le fichier entrypoint.sh
-                        cat > entrypoint.sh << 'EOF'
-                        #!/bin/sh
-                        echo "Démarrage de l'application..."
-                        if [ -f /app/app.jar ]; then
-                            java -jar /app/app.jar
-                        else
-                            echo "ERREUR: JAR non trouvé"
-                            exit 1
-                        fi
-                        EOF
-                        chmod +x entrypoint.sh
-                    fi
-                '''
-            }
-        }
+    stage('Checkout Git') {
+    steps {
+        echo '📥 Téléchargement du code depuis Git...'
+        git branch: 'master', 
+        url: 'https://github.com/Ranimaj/Project_Devops.git'
+        
+        // Vérifier que les fichiers nécessaires existent
+        sh '''
+            echo "📁 Structure du projet:"
+            ls -la
+            echo ""
+            echo "🔍 Vérification des fichiers Docker:"
+            
+            # Vérifier Dockerfile
+            if [ -f Dockerfile ]; then
+                echo "✅ Dockerfile présent"
+                echo "=== Premières lignes du Dockerfile ==="
+                head -5 Dockerfile
+                echo ""
+            else
+                        echo "❌ Dockerfile manquant"
+                        exit 1
+            fi
+            
+            # Vérifier entrypoint.sh
+            if [ -f entrypoint.sh ]; then
+                echo "✅ entrypoint.sh présent"
+                chmod +x entrypoint.sh
+                echo "=== Premières lignes de entrypoint.sh ==="
+                head -5 entrypoint.sh
+                echo ""
+            else
+                echo "❌ entrypoint.sh manquant - création..."
+                # Créer le fichier entrypoint.sh
+                cat > entrypoint.sh << 'EOF2'
+                #!/bin/sh
+                echo "Démarrage de l'application..."
+                if [ -f /app/app.jar ]; then
+                    java -jar /app/app.jar
+                else
+                    echo "ERREUR: JAR non trouvé"
+                    exit 1
+                fi
+                EOF2
+                chmod +x entrypoint.sh
+                echo "✅ entrypoint.sh créé"
+            fi
+            
+            echo "✅ Vérifications terminées"
+        '''
+    }
+}
         
         stage('Create Test Application') {
             steps {
