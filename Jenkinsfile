@@ -1,8 +1,9 @@
 pipeline {
     agent any
     environment {
-        DOCKER_HUB_REPO = 'student-management'
+        DOCKER_HUB_REPO = 'ranimajlani02/student-management'  
         DOCKER_IMAGE_TAG = "build-${env.BUILD_NUMBER}"
+        DOCKER_CREDENTIALS_ID = 'docker-hub-creds'
     }
     stages {
         stage('Checkout Git') {
@@ -27,11 +28,11 @@ pipeline {
         stage('Build Docker Image with Alpine') {
             steps {
                 echo '🐳 Construction avec Alpine + Java...'
-                sh """
-                    docker build -t ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} .
+                script {
+                    docker.build("${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}")
                     echo "✅ Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}"
-                    docker images | grep student-management
-                """
+                    sh 'docker images | grep student-management'
+                }
             }
         }
         
@@ -51,20 +52,76 @@ pipeline {
                 """
             }
         }
+        
+        stage('Login to Docker Hub') {
+            steps {
+                echo '🔐 Authentification sur Docker Hub...'
+                withCredentials([usernamePassword(
+                    credentialsId: env.DOCKER_CREDENTIALS_ID,
+                    usernameVariable: 'DOCKER_USER',
+                    passwordVariable: 'DOCKER_PASS'
+                )]) {
+                    sh """
+                        echo "Login Docker Hub..."
+                        docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}
+                        echo "✅ Authentifié avec succès"
+                    """
+                }
+            }
+        }
+        
+        stage('Push Docker Image to Docker Hub') {
+            steps {
+                echo '🚀 Poussée de l image vers Docker Hub...'
+                sh """
+                    docker push ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}
+                    echo "✅ Image poussée avec succès"
+                    echo "Image disponible sur : https://hub.docker.com/r/${DOCKER_HUB_REPO}"
+                """
+            }
+        }
+        
+        stage('Tag and Push Latest') {
+            steps {
+                echo '🏷️ Taggage de la version latest...'
+                sh """
+                    docker tag ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} ${DOCKER_HUB_REPO}:latest
+                    docker push ${DOCKER_HUB_REPO}:latest
+                    echo "✅ Version 'latest' poussée avec succès"
+                """
+            }
+        }
+        
+        stage('Cleanup') {
+            steps {
+                echo '🧹 Nettoyage des images locales...'
+                sh """
+                    docker logout
+                    docker rmi ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG} ${DOCKER_HUB_REPO}:latest 2>/dev/null || true
+                    echo "✅ Nettoyage effectué"
+                """
+            }
+        }
     }
     post {
         success {
-            echo '🎉 SUCCÈS : Pipeline Docker terminé avec succès!'
+            echo '🎉 SUCCÈS : Pipeline terminé avec succès!'
             sh """
                 echo '=== RÉSUMÉ ==='
-                echo 'Image créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
+                echo 'Image Docker créée : ${DOCKER_HUB_REPO}:${DOCKER_IMAGE_TAG}'
+                echo 'Image Docker (latest) : ${DOCKER_HUB_REPO}:latest'
                 echo 'Base : Alpine Linux + Java 17'
                 echo 'Port : 8089'
-                docker images | grep student-management
+                echo 'Docker Hub : https://hub.docker.com/r/${DOCKER_HUB_REPO}'
+                echo '=== === === === ==='
             """
         }
         failure {
             echo '❌ ÉCHEC : Pipeline a échoué!'
+            sh 'docker logout || true'
+        }
+        always {
+            echo '📋 Journal du build disponible dans les logs Jenkins'
         }
     }
 }
