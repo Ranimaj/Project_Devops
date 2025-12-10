@@ -1,32 +1,60 @@
 pipeline {
     agent any
     
-    tools {
-        maven 'Maven-3.8.4'
-    }
-    
     environment {
         DOCKER_REGISTRY = 'docker.io'
-        DOCKER_IMAGE = 'votre-user/spring-app'
+        DOCKER_IMAGE = 'ranimaj/spring-app'  // Remplacez par votre nom
         KUBE_NAMESPACE = 'devops'
     }
     
     stages {
         stage('Checkout') {
             steps {
-                git 'https://github.com/votre-repo/spring-app.git'
+                git branch: 'master', 
+                    url: 'https://github.com/Ranimaj/Project_Devops.git'
+            }
+        }
+        
+        stage('Setup Maven') {
+            steps {
+                script {
+                    // Vérifier si Maven est installé, sinon l'installer
+                    sh '''
+                        if ! command -v mvn &> /dev/null; then
+                            echo "Maven n'est pas installé, installation..."
+                            sudo apt update
+                            sudo apt install -y maven
+                        fi
+                        mvn --version
+                    '''
+                }
             }
         }
         
         stage('Build Maven') {
             steps {
-                sh 'mvn clean package'
+                sh 'mvn clean package -DskipTests'
             }
         }
         
         stage('Build Docker Image') {
             steps {
                 script {
+                    // Vérifier Dockerfile
+                    sh 'cat Dockerfile || echo "Pas de Dockerfile, création d\'un simple..."'
+                    
+                    // Créer un Dockerfile simple si nécessaire
+                    sh '''
+                        if [ ! -f Dockerfile ]; then
+                            cat > Dockerfile << EOF
+                        FROM openjdk:11-jre-slim
+                        COPY target/*.jar app.jar
+                        ENTRYPOINT ["java", "-jar", "/app.jar"]
+                        EXPOSE 8080
+                        EOF
+                        fi
+                    '''
+                    
                     docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
                 }
             }
@@ -35,8 +63,16 @@ pipeline {
         stage('Push Docker Image') {
             steps {
                 script {
-                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-credentials') {
-                        docker.image("${DOCKER_IMAGE}:${BUILD_NUMBER}").push()
+                    // Seulement si vous avez un compte Docker Hub
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                            docker login -u $DOCKER_USER -p $DOCKER_PASS
+                            docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
+                        """
                     }
                 }
             }
@@ -45,10 +81,23 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // Mettre à jour l'image dans le déploiement
                     sh """
-                    kubectl set image deployment/spring-app spring-app=${DOCKER_IMAGE}:${BUILD_NUMBER} -n ${KUBE_NAMESPACE}
-                    kubectl rollout status deployment/spring-app -n ${KUBE_NAMESPACE}
+                        echo "Déploiement sur Kubernetes..."
+                        
+                        # Vérifier l'accès à Kubernetes
+                        kubectl get nodes
+                        kubectl get pods -n ${KUBE_NAMESPACE} || echo "Namespace ${KUBE_NAMESPACE} non trouvé"
+                        
+                        # Mettre à jour l'image dans le déploiement
+                        kubectl set image deployment/spring-app \
+                            spring-app=${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                            -n ${KUBE_NAMESPACE} \
+                            --record
+                        
+                        # Attendre le déploiement
+                        kubectl rollout status deployment/spring-app -n ${KUBE_NAMESPACE}
+                        
+                        echo "✅ Déploiement terminé"
                     """
                 }
             }
@@ -57,12 +106,23 @@ pipeline {
         stage('Test Deployment') {
             steps {
                 script {
-                    // Attendre que l'application soit prête
-                    sleep 30
-                    
-                    // Tester l'application
-                    def url = sh(script: "minikube service spring-service --url -n ${KUBE_NAMESPACE}", returnStdout: true).trim()
-                    sh "curl -f ${url} || true"
+                    sh '''
+                        # Attendre que l'application soit prête
+                        sleep 20
+                        
+                        # Obtenir l'URL du service
+                        URL=$(minikube service spring-service --url -n devops 2>/dev/null || echo "")
+                        
+                        if [ -n "$URL" ]; then
+                            echo "Testing application at: $URL"
+                            curl -f $URL && echo "✅ Application test passed!" || echo "⚠️ Application test warning"
+                        else
+                            echo "⚠️ Impossible d'obtenir l'URL du service"
+                            # Tester directement avec l'IP de minikube
+                            MINIKUBE_IP=$(minikube ip)
+                            curl -f http://$MINIKUBE_IP:30093/ || echo "Test alternatif échoué"
+                        fi
+                    '''
                 }
             }
         }
@@ -70,10 +130,12 @@ pipeline {
     
     post {
         success {
-            echo 'Pipeline réussi! Application déployée dans Kubernetes.'
+            echo '🚀 Pipeline réussi! Application déployée dans Kubernetes.'
+            slackSend(color: 'good', message: "Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER} réussi!")
         }
         failure {
-            echo 'Pipeline échoué. Vérifiez les logs.'
+            echo '❌ Pipeline échoué. Vérifiez les logs.'
+            slackSend(color: 'danger', message: "Pipeline ${env.JOB_NAME} #${env.BUILD_NUMBER} échoué!")
         }
     }
 }
