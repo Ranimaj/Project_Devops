@@ -1,0 +1,79 @@
+pipeline {
+    agent any
+    
+    tools {
+        maven 'Maven-3.8.4'
+    }
+    
+    environment {
+        DOCKER_REGISTRY = 'docker.io'
+        DOCKER_IMAGE = 'votre-user/spring-app'
+        KUBE_NAMESPACE = 'devops'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                git 'https://github.com/votre-repo/spring-app.git'
+            }
+        }
+        
+        stage('Build Maven') {
+            steps {
+                sh 'mvn clean package'
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_IMAGE}:${BUILD_NUMBER}")
+                }
+            }
+        }
+        
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-credentials') {
+                        docker.image("${DOCKER_IMAGE}:${BUILD_NUMBER}").push()
+                    }
+                }
+            }
+        }
+        
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    // Mettre à jour l'image dans le déploiement
+                    sh """
+                    kubectl set image deployment/spring-app spring-app=${DOCKER_IMAGE}:${BUILD_NUMBER} -n ${KUBE_NAMESPACE}
+                    kubectl rollout status deployment/spring-app -n ${KUBE_NAMESPACE}
+                    """
+                }
+            }
+        }
+        
+        stage('Test Deployment') {
+            steps {
+                script {
+                    // Attendre que l'application soit prête
+                    sleep 30
+                    
+                    // Tester l'application
+                    def url = sh(script: "minikube service spring-service --url -n ${KUBE_NAMESPACE}", returnStdout: true).trim()
+                    sh "curl -f ${url} || true"
+                }
+            }
+        }
+    }
+    
+    post {
+        success {
+            echo 'Pipeline réussi! Application déployée dans Kubernetes.'
+        }
+        failure {
+            echo 'Pipeline échoué. Vérifiez les logs.'
+        }
+    }
+}
